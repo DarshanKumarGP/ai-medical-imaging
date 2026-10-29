@@ -1,0 +1,16 @@
+{
+  "task": "Task09_Spleen",
+  "model": "MONAI 3D UNet",
+  "test_volumes": 6,
+  "test_dice_mean": 0.9246535003185272,
+  "test_dice_std": 0.04764619426395241,
+  "test_dice_per_case": [
+    0.8207,
+    0.9263,
+    0.9599,
+    0.9431,
+    0.9441,
+    0.9538
+  ],
+  "best_val_dice": 0.9437868197758993
+}

@@ -1,0 +1,5 @@
+outs:
+- md5: 71a2b73ac812a08a1f8d6425d818dc6d
+  size: 19305855
+  hash: md5
+  path: best_unet3d.pt
