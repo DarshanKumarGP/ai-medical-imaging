@@ -1,0 +1,14 @@
+{
+  "test_auc": 0.8869419134518512,
+  "threshold": 0.48372459411621094,
+  "accuracy": 0.7546839870097427,
+  "sensitivity": 0.8713968957871396,
+  "specificity": 0.7207352466946146,
+  "precision": 0.47578692493946734,
+  "f1": 0.615505090054816,
+  "tn": 2235,
+  "fp": 866,
+  "fn": 116,
+  "tp": 786,
+  "model": "DenseNet121 (ImageNet pretrained), RSNA Pneumonia, 224x224"
+}
