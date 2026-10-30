@@ -1,8 +1,7 @@
 venv/
 __pycache__/
-*.pt
-*.pth
 node_modules/
 .env
 *.db
 /data
+runtime/

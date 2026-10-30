@@ -11,6 +11,7 @@ services:
       ORTHANC__REMOTE_ACCESS_ALLOWED: "true"
       # Demo login. Override with ORTHANC_USER / ORTHANC_PASSWORD in a .env file.
       ORTHANC__REGISTERED_USERS: '{"${ORTHANC_USER:-demo}": "${ORTHANC_PASSWORD:-demo}"}'
+      ORTHANC__STABLE_AGE: "5"
     volumes:
       - orthanc-db:/var/lib/orthanc/db   # keeps stored scans between restarts
     mem_limit: 512m
