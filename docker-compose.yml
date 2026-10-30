@@ -1,0 +1,20 @@
+services:
+  orthanc:
+    image: orthancteam/orthanc:latest
+    container_name: orthanc
+    ports:
+      - "8042:8042"   # web UI and REST API
+      - "4242:4242"   # DICOM protocol port
+    environment:
+      ORTHANC__NAME: "AI Imaging Orthanc (education only)"
+      ORTHANC__AUTHENTICATION_ENABLED: "true"
+      ORTHANC__REMOTE_ACCESS_ALLOWED: "true"
+      # Demo login. Override with ORTHANC_USER / ORTHANC_PASSWORD in a .env file.
+      ORTHANC__REGISTERED_USERS: '{"${ORTHANC_USER:-demo}": "${ORTHANC_PASSWORD:-demo}"}'
+    volumes:
+      - orthanc-db:/var/lib/orthanc/db   # keeps stored scans between restarts
+    mem_limit: 512m
+    restart: unless-stopped
+
+volumes:
+  orthanc-db:
