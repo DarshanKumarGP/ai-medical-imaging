@@ -48,14 +48,22 @@ BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT);
 """
 
+_ready = set()   # database files whose schema has already been created in this process
+
 
 def connect():
     RUNTIME.mkdir(parents=True, exist_ok=True)
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    # check_same_thread=False: FastAPI may use the connection from another worker thread.
+    # Each request gets its own connection, so this is safe.
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.executescript(SCHEMA)
+    conn.execute("PRAGMA busy_timeout=30000")
+    key = str(DB_PATH.resolve())
+    if key not in _ready:        # create the schema once, not on every request
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.executescript(SCHEMA)
+        _ready.add(key)
     return conn
 
 
