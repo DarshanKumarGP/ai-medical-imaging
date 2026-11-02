@@ -2,20 +2,24 @@ import os
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
+import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
-from db import RUNTIME, connect
+from ct_render import render_mask, render_scan
+from db import RUNTIME, VOLUMES_DIR, connect
 
 DISCLAIMER = "FOR EDUCATION ONLY. NOT FOR CLINICAL USE."
+CACHE = {"Cache-Control": "private, max-age=3600"}   # study images never change once written
 
 app = FastAPI(
     title="AI-Assisted Medical Imaging API",
-    description=f"**{DISCLAIMER}** Lists AI-analysed studies and records radiologist decisions "
-                "in an append-only audit log. The AI score is a risk score, not a calibrated probability.",
-    version="1.0.0",
+    description=f"**{DISCLAIMER}** Lists AI-analysed studies (chest X-ray classification with Grad-CAM, "
+                "CT spleen segmentation) and records radiologist decisions in an append-only audit log. "
+                "The X-ray AI score is a risk score, not a calibrated probability.",
+    version="1.1.0",
 )
 origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=origins,
@@ -36,6 +40,8 @@ def to_study(row):
     d["flagged"] = None if d["flagged"] is None else bool(d["flagged"])
     d["scan_url"] = f"/studies/{sid}/scan" if d.pop("scan_path") else None
     d["heatmap_url"] = f"/studies/{sid}/heatmap" if d.pop("heatmap_path") else None
+    d["kind"] = "ct" if d["modality"] == "CT" else "xray"
+    d.pop("volume_path", None)
     d.pop("instance_id", None)
     return d
 
@@ -98,10 +104,7 @@ def _image(conn, study_id, column):
     path = get_study_or_404(conn, study_id)[column]
     if not path or not (RUNTIME / path).exists():
         raise HTTPException(404, "Image not available for this study")
-    # Images never change once written, so the browser may cache them for an hour.
-    # This cuts the number of simultaneous requests when switching between studies.
-    return FileResponse(RUNTIME / path, media_type="image/png",
-                        headers={"Cache-Control": "private, max-age=3600"})
+    return FileResponse(RUNTIME / path, media_type="image/png", headers=CACHE)
 
 
 @app.get("/studies/{study_id}/scan")
@@ -112,6 +115,33 @@ def study_scan(study_id: str, conn=Depends(get_conn)):
 @app.get("/studies/{study_id}/heatmap")
 def study_heatmap(study_id: str, conn=Depends(get_conn)):
     return _image(conn, study_id, "heatmap_path")
+
+
+def _open_volume(conn, study_id, z):
+    """Memory-map the stored CT and mask arrays and check the slice number."""
+    row = get_study_or_404(conn, study_id)
+    if not row["volume_path"]:
+        raise HTTPException(404, "No 3D volume for this study")
+    ct_file = VOLUMES_DIR / f"{row['volume_path']}_ct.npy"
+    mask_file = VOLUMES_DIR / f"{row['volume_path']}_mask.npy"
+    if not ct_file.exists() or not mask_file.exists():
+        raise HTTPException(404, "Volume files are missing")
+    ct, mask = np.load(ct_file, mmap_mode="r"), np.load(mask_file, mmap_mode="r")
+    if not 0 <= z < ct.shape[2]:
+        raise HTTPException(404, f"Slice {z} out of range (0 to {ct.shape[2] - 1})")
+    return ct, mask
+
+
+@app.get("/studies/{study_id}/slice/{z}/scan")
+def ct_slice_scan(study_id: str, z: int, conn=Depends(get_conn)):
+    ct, _ = _open_volume(conn, study_id, z)
+    return Response(render_scan(ct[:, :, z]), media_type="image/png", headers=CACHE)
+
+
+@app.get("/studies/{study_id}/slice/{z}/mask")
+def ct_slice_mask(study_id: str, z: int, conn=Depends(get_conn)):
+    _, mask = _open_volume(conn, study_id, z)
+    return Response(render_mask(mask[:, :, z]), media_type="image/png", headers=CACHE)
 
 
 @app.post("/studies/{study_id}/decision", status_code=201)

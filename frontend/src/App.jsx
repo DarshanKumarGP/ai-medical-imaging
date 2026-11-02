@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { getStats, getStudies, getStudy, postDecision, imageUrl } from "./api";
+import { getStats, getStudies, getStudy, postDecision, imageUrl, sliceUrl } from "./api";
 import "./App.css";
 
-const short = (id) => (id ? id.slice(0, 8) : "");
+// X-ray patient IDs are long UUIDs, so show 8 characters. Short names (CT demo cases) show in full.
+const short = (id) => (id && id.length > 12 ? id.slice(0, 8) : id || "");
 
 function readSaved(key) {
   try {
@@ -14,6 +15,7 @@ function readSaved(key) {
 
 function ScoreBadge({ study }) {
   if (study.status !== "done") return <span className="badge muted">{study.status}</span>;
+  if (study.kind === "ct") return <span className="badge info">SEGMENTED</span>;
   return (
     <span className={`badge ${study.flagged ? "flag" : "ok"}`}>
       {study.flagged ? "FLAGGED" : "not flagged"}
@@ -21,7 +23,7 @@ function ScoreBadge({ study }) {
   );
 }
 
-// Shows the scan and, optionally, the heatmap on top of it.
+// Chest X-ray: the scan with the Grad-CAM heatmap on top.
 // App renders this with key={study_id}, so failure/retry state resets when another study is selected.
 function StudyImage({ detail, showHeat, heatOpacity }) {
   const [attempt, setAttempt] = useState(0);
@@ -61,7 +63,7 @@ function StudyImage({ detail, showHeat, heatOpacity }) {
                 <button className="link" onClick={retry}>Retry</button>
               </div>
             ) : (
-              "No image available"
+              detail.error || "No image available"
             )}
           </div>
         )}
@@ -86,6 +88,87 @@ function StudyImage({ detail, showHeat, heatOpacity }) {
   );
 }
 
+// CT: scroll through the axial slices with the AI spleen mask on top.
+// App renders this with key={study_id}, so the slice position resets for each study.
+function CtViewer({ detail, showMask, maskOpacity }) {
+  const last = detail.n_slices - 1;
+  const [z, setZ] = useState(detail.best_slice ?? Math.floor(last / 2));
+  const [scanFailed, setScanFailed] = useState(false);
+  const [maskFailed, setMaskFailed] = useState(false);
+
+  // Warm the browser cache for the neighbouring slices so scrolling feels smooth
+  useEffect(() => {
+    [z - 1, z + 1].forEach((n) => {
+      if (n >= 0 && n <= last) new Image().src = sliceUrl(detail.study_id, n, "scan");
+    });
+  }, [z, last, detail.study_id]);
+
+  function goTo(n) {
+    setZ(Math.min(last, Math.max(0, n)));
+    setScanFailed(false);
+    setMaskFailed(false);
+  }
+
+  return (
+    <>
+      <div className="image-box">
+        {!scanFailed ? (
+          <img
+            src={sliceUrl(detail.study_id, z, "scan")}
+            alt={`CT slice ${z + 1}`}
+            className="scan"
+            onError={() => setScanFailed(true)}
+          />
+        ) : (
+          <div className="no-image">
+            <div>
+              <p>This slice failed to load.</p>
+              <button className="link" onClick={() => goTo(z)}>Retry</button>
+            </div>
+          </div>
+        )}
+        {showMask && !scanFailed && !maskFailed && (
+          <img
+            src={sliceUrl(detail.study_id, z, "mask")}
+            alt="AI spleen segmentation"
+            className="heat"
+            style={{ opacity: maskOpacity / 100 }}
+            onError={() => setMaskFailed(true)}
+          />
+        )}
+        <span className="orient top">A</span>
+        <span className="orient bottom">P</span>
+        <span className="orient left">R</span>
+        <span className="orient right">L</span>
+      </div>
+      {maskFailed && (
+        <p className="form-error">
+          The AI overlay could not be loaded, so only the plain slice is shown.{" "}
+          <button className="link" onClick={() => goTo(z)}>Retry</button>
+        </p>
+      )}
+      <div className="slice-row">
+        <button className="step" onClick={() => goTo(z - 1)} disabled={z <= 0} aria-label="Previous slice">◀</button>
+        <input
+          type="range"
+          min={0}
+          max={last}
+          value={z}
+          aria-label="CT slice"
+          onChange={(e) => goTo(Number(e.target.value))}
+        />
+        <button className="step" onClick={() => goTo(z + 1)} disabled={z >= last} aria-label="Next slice">▶</button>
+      </div>
+      <div className="slice-info">
+        <span>Slice {z + 1} / {detail.n_slices}</span>
+        {detail.best_slice != null && (
+          <button className="link" onClick={() => goTo(detail.best_slice)}>Jump to largest spleen area</button>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   const [studies, setStudies] = useState([]);
   const [stats, setStats] = useState(null);
@@ -94,8 +177,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [loadedDetail, setLoadedDetail] = useState(null);
   const [detailError, setDetailError] = useState("");
-  const [showHeat, setShowHeat] = useState(true);
-  const [heatOpacity, setHeatOpacity] = useState(80);
+  const [showOverlay, setShowOverlay] = useState(true);
+  const [overlayOpacity, setOverlayOpacity] = useState(80);
   const [reviewer, setReviewer] = useState(() => readSaved("reviewer"));
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -199,6 +282,8 @@ export default function App() {
 
   const canReview = detail && detail.status === "done";
   const alreadyReviewed = detail && detail.review_status !== "pending";
+  const hasVolume = Boolean(detail && detail.kind === "ct" && detail.n_slices > 0);
+  const hasOverlay = hasVolume || Boolean(detail && detail.heatmap_url);
 
   return (
     <div className="app">
@@ -207,7 +292,7 @@ export default function App() {
       </div>
 
       <header className="topbar">
-        <h1>AI-Assisted Chest X-ray Review</h1>
+        <h1>AI-Assisted Medical Imaging Review</h1>
         {stats && (
           <div className="stats">
             <span><b>{stats.analysed}</b> analysed</span>
@@ -250,8 +335,15 @@ export default function App() {
                 onClick={() => selectStudy(s.study_id)}
               >
                 <div className="row1">
-                  <span className="pid">{short(s.patient_id)}</span>
-                  <span className="score">{s.score != null ? s.score.toFixed(2) : "–"}</span>
+                  <span>
+                    <span className="pid">{short(s.patient_id)}</span>
+                    {s.kind === "ct" && <span className="mod">CT</span>}
+                  </span>
+                  <span className="score">
+                    {s.kind === "ct"
+                      ? s.spleen_volume_ml != null ? `${Math.round(s.spleen_volume_ml)} mL` : "–"
+                      : s.score != null ? s.score.toFixed(2) : "–"}
+                  </span>
                 </div>
                 <div className="row2">
                   <ScoreBadge study={s} />
@@ -287,21 +379,30 @@ export default function App() {
 
               <div className="viewer-body">
                 <div className="image-col">
-                  <StudyImage
-                    key={detail.study_id}
-                    detail={detail}
-                    showHeat={showHeat}
-                    heatOpacity={heatOpacity}
-                  />
+                  {hasVolume ? (
+                    <CtViewer
+                      key={detail.study_id}
+                      detail={detail}
+                      showMask={showOverlay}
+                      maskOpacity={overlayOpacity}
+                    />
+                  ) : (
+                    <StudyImage
+                      key={detail.study_id}
+                      detail={detail}
+                      showHeat={showOverlay}
+                      heatOpacity={overlayOpacity}
+                    />
+                  )}
                   <div className="controls">
                     <label>
                       <input
                         type="checkbox"
-                        checked={showHeat && Boolean(detail.heatmap_url)}
-                        disabled={!detail.heatmap_url}
-                        onChange={(e) => setShowHeat(e.target.checked)}
+                        checked={showOverlay && hasOverlay}
+                        disabled={!hasOverlay}
+                        onChange={(e) => setShowOverlay(e.target.checked)}
                       />{" "}
-                      Show AI heatmap
+                      {hasVolume ? "Show AI segmentation" : "Show AI heatmap"}
                     </label>
                     <label>
                       Opacity{" "}
@@ -309,23 +410,51 @@ export default function App() {
                         type="range"
                         min="10"
                         max="100"
-                        value={heatOpacity}
-                        disabled={!detail.heatmap_url}
-                        onChange={(e) => setHeatOpacity(Number(e.target.value))}
+                        value={overlayOpacity}
+                        disabled={!hasOverlay}
+                        onChange={(e) => setOverlayOpacity(Number(e.target.value))}
                       />
                     </label>
                   </div>
                   <p className="note">
-                    {detail.heatmap_url
-                      ? "Warm colours mark image regions that pushed the AI towards pneumonia. The map is coarse and is not an outline of disease."
-                      : "No heatmap: the scan was not flagged, and a heatmap on a normal-scored scan would be misleading."}
+                    {hasVolume
+                      ? "Red marks the spleen outlined by the AI (3D U-Net). Left of the picture is the patient's right. Slices are shown on the model's resampled 1.5 × 1.5 × 2 mm grid."
+                      : detail.heatmap_url
+                        ? "Warm colours mark image regions that pushed the AI towards pneumonia. The map is coarse and is not an outline of disease."
+                        : detail.kind === "ct"
+                          ? "This CT study was not analysed."
+                          : "No heatmap: the scan was not flagged, and a heatmap on a normal-scored scan would be misleading."}
                   </p>
                 </div>
 
                 <div className="panel-col">
                   <div className="card">
-                    <h3>AI confidence score</h3>
-                    {detail.score != null ? (
+                    <h3>{hasVolume ? "AI segmentation summary" : "AI confidence score"}</h3>
+                    {hasVolume ? (
+                      <>
+                        <div className="stat-row">
+                          <span>Predicted spleen volume</span>
+                          <b>{detail.spleen_volume_ml != null ? `${detail.spleen_volume_ml.toFixed(0)} mL` : "–"}</b>
+                        </div>
+                        {detail.score != null ? (
+                          <>
+                            <div className="stat-row">
+                              <span>Segmentation confidence</span>
+                              <b>{(detail.score * 100).toFixed(0)}%</b>
+                            </div>
+                            <div className="bar">
+                              <div className="fill ok" style={{ width: `${detail.score * 100}%` }} />
+                            </div>
+                            <p className="note">
+                              Confidence is the average model probability inside the predicted region. It does not
+                              prove the outline is correct, so check the overlay on several slices.
+                            </p>
+                          </>
+                        ) : (
+                          <p className="note">{detail.error || "The model found no spleen in this volume."}</p>
+                        )}
+                      </>
+                    ) : detail.score != null ? (
                       <>
                         <div className="score-big">{(detail.score * 100).toFixed(0)}%</div>
                         <div className="bar">
@@ -333,15 +462,17 @@ export default function App() {
                             className={`fill ${detail.flagged ? "flag" : "ok"}`}
                             style={{ width: `${detail.score * 100}%` }}
                           />
-                          <div
-                            className="threshold"
-                            style={{ left: `${detail.threshold * 100}%` }}
-                            title="Decision threshold"
-                          />
+                          {detail.threshold != null && (
+                            <div
+                              className="threshold"
+                              style={{ left: `${detail.threshold * 100}%` }}
+                              title="Decision threshold"
+                            />
+                          )}
                         </div>
                         <p className="note">
-                          Threshold {detail.threshold.toFixed(2)}. This is a risk score from the model, not a
-                          calibrated probability of disease.
+                          Threshold {detail.threshold != null ? detail.threshold.toFixed(2) : "–"}. This is a risk
+                          score from the model, not a calibrated probability of disease.
                         </p>
                       </>
                     ) : (

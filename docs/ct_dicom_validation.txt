@@ -1,0 +1,12 @@
+﻿
+spleen_26
+  grid shape  DICOM path: (234, 198, 161) | NIfTI reference: (234, 198, 161)
+  max image difference: 0.0020  (should be below 0.01)
+  Dice vs ground truth: 0.8205
+  spleen volume  AI: 147 mL | ground truth: 202 mL
+
+spleen_29
+  grid shape  DICOM path: (283, 236, 256) | NIfTI reference: (283, 236, 256)
+  max image difference: 0.0020  (should be below 0.01)
+  Dice vs ground truth: 0.9599
+  spleen volume  AI: 187 mL | ground truth: 183 mL

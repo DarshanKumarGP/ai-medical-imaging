@@ -2,6 +2,9 @@ const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export const imageUrl = (path) => (path ? `${BASE}${path}` : null);
 
+// One axial slice of a CT study. layer is "scan" or "mask".
+export const sliceUrl = (studyId, z, layer) => `${BASE}/studies/${studyId}/slice/${z}/${layer}`;
+
 async function request(path, options) {
   const res = await fetch(`${BASE}${path}`, options);
   if (!res.ok) {
