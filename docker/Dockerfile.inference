@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+# libgl1 / libglib2.0-0: needed by OpenCV, which the Grad-CAM library imports
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 MPLBACKEND=Agg RUNTIME_DIR=/app/runtime
+WORKDIR /app
+
+# CPU-only PyTorch (the default Linux wheel bundles ~2 GB of GPU libraries we do not need)
+COPY requirements-torch.txt .
+RUN pip install -r requirements-torch.txt --index-url https://download.pytorch.org/whl/cpu
+
+COPY requirements-inference.txt .
+RUN pip install -r requirements-inference.txt
+
+COPY src ./src
+
+RUN useradd --create-home app && mkdir -p /app/runtime && chown -R app /app/runtime
+USER app
+
+# The trained models are mounted at /app/models by docker-compose (they are versioned with DVC, not baked in)
+CMD ["python", "src/inference_service.py"]

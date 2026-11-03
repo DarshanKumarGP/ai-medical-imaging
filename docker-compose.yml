@@ -9,13 +9,59 @@ services:
       ORTHANC__NAME: "AI Imaging Orthanc (education only)"
       ORTHANC__AUTHENTICATION_ENABLED: "true"
       ORTHANC__REMOTE_ACCESS_ALLOWED: "true"
+      ORTHANC__STABLE_AGE: "5"
       # Demo login. Override with ORTHANC_USER / ORTHANC_PASSWORD in a .env file.
       ORTHANC__REGISTERED_USERS: '{"${ORTHANC_USER:-demo}": "${ORTHANC_PASSWORD:-demo}"}'
-      ORTHANC__STABLE_AGE: "5"
     volumes:
       - orthanc-db:/var/lib/orthanc/db   # keeps stored scans between restarts
     mem_limit: 512m
     restart: unless-stopped
 
+  inference:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.inference
+    container_name: inference
+    environment:
+      ORTHANC_URL: http://orthanc:8042
+      ORTHANC_USER: ${ORTHANC_USER:-demo}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:-demo}
+      RUNTIME_DIR: /app/runtime
+    volumes:
+      - runtime:/app/runtime         # database and generated images, shared with the API
+      - ./models:/app/models:ro      # trained models (run `dvc pull` after a fresh clone)
+    depends_on:
+      - orthanc
+    mem_limit: 2800m
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: api
+    ports:
+      - "8000:8000"
+    environment:
+      RUNTIME_DIR: /app/runtime
+    volumes:
+      - runtime:/app/runtime
+    mem_limit: 400m
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000
+    container_name: frontend
+    ports:
+      - "5173:80"                    # same address as the dev server: http://localhost:5173
+    depends_on:
+      - api
+    mem_limit: 64m
+    restart: unless-stopped
+
 volumes:
   orthanc-db:
+  runtime:

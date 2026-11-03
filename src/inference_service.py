@@ -107,8 +107,12 @@ def process_study(conn, model, session, study_id):
             raise Skip(f"No model for modality '{modality}' yet")
     except Skip as why:
         row["status"], row["error"] = "skipped", str(why)
-    except Exception:
-        row["status"], row["error"] = "error", traceback.format_exc()[-800:]
+    except Exception as exc:
+        traceback.print_exc()                      # the full details go to the log
+        root = exc
+        while root.__cause__ is not None:          # MONAI wraps the real problem in a RuntimeError
+            root = root.__cause__
+        row["status"], row["error"] = "error", f"{type(root).__name__}: {root}"[:300]
 
     conn.execute("""INSERT INTO studies (study_id, instance_id, patient_id, modality, patient_sex,
         patient_age, study_date, status, score, flagged, threshold, model_version, scan_path,

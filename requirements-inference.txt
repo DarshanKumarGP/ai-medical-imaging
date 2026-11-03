@@ -1,0 +1,8 @@
+numpy==2.4.6
+pillow==13.0.0
+pydicom==3.0.2
+requests==2.34.2
+matplotlib==3.11.2
+grad-cam==1.5.7
+monai==1.6.1
+nibabel==5.4.2

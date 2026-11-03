@@ -1,0 +1,7 @@
+# Send only what the Python images need to the Docker build
+*
+!src
+!requirements-api.txt
+!requirements-inference.txt
+!requirements-torch.txt
+**/__pycache__
