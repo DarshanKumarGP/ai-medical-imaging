@@ -79,10 +79,41 @@ Frontend: `npm run lint` clean, `npm run build` succeeds (also executed inside t
 | Fresh database | all 69 studies in Orthanc processed (66 X-rays, 2 CTs segmented, 1 short CT skipped); 0 approved / 0 rejected |
 | Scores in containers vs laptop | identical for X-rays; CT 147 mL and 187 mL, identical |
 | Persistence | a decision (Dr. Kiran, spleen_29) survived `docker compose down` and `up -d` |
-| Orthanc stopped | the inference service logs "Orthanc not reachable ... retrying" instead of crashing |
+| Orthanc stopped for 25 s, then restarted | the inference service logged "Orthanc not reachable ... retrying" instead of crashing, and resumed by itself after the restart (no further errors in the following 30 s) |
 | Resources at idle | inference 433 MiB, api 47 MiB, orthanc 17 MiB, frontend 11 MiB. Both CT volumes completed within the 2.8 GB limit of the inference container. |
 
-## 6. Known failures and limits
+## 6. Subgroup (bias) analysis, X-ray classifier, test split (4,003 patients)
+
+Sex, age and view position were read from the DICOM headers. One global threshold (0.4837). 95% confidence intervals by bootstrap (300 resamples). Table: `docs/subgroup_metrics.csv`.
+
+| Subgroup | n | Pneumonia rate | AUC (95% CI) | Sensitivity | Specificity |
+|---|---|---|---|---|---|
+| All | 4003 | 0.225 | 0.887 (0.876-0.899) | 0.871 | 0.721 |
+| Female | 1681 | 0.217 | 0.888 (0.870-0.904) | 0.855 | 0.734 |
+| Male | 2322 | 0.231 | 0.886 (0.870-0.899) | 0.883 | 0.711 |
+| Age < 40 | 1309 | 0.245 | 0.900 (0.883-0.916) | 0.888 | 0.710 |
+| Age 40-64 | 2151 | 0.215 | 0.887 (0.873-0.901) | 0.868 | 0.733 |
+| Age 65+ | 543 | 0.217 | 0.850 (0.817-0.884) | 0.839 | 0.699 |
+| View AP (portable) | 1833 | 0.387 | 0.831 (0.810-0.850) | 0.932 | 0.467 |
+| View PA | 2170 | 0.088 | 0.872 (0.845-0.895) | 0.646 | 0.865 |
+
+Findings: no meaningful difference by sex; lower AUC for age 65+ (intervals only just touch, about 118 pneumonia cases); a large difference by **view position**: the single threshold over-flags AP films (69% flagged, specificity 0.47) and under-detects pneumonia on PA films (sensitivity 0.65).
+
+### Experiment: one threshold per view position
+Thresholds chosen on the **validation** split (best sensitivity + specificity balance): AP 0.7517, PA 0.2488. Evaluated on the untouched test split (`docs/view_threshold_experiment.csv`).
+
+| Setting | n | Sensitivity | Specificity | Precision | Share flagged |
+|---|---|---|---|---|---|
+| AP, one threshold (0.4837) | 1833 | 0.932 | 0.467 | 0.525 | 0.687 |
+| AP, own threshold (0.752) | 1833 | 0.801 | 0.683 | 0.615 | 0.505 |
+| PA, one threshold (0.4837) | 2170 | 0.646 | 0.865 | 0.317 | 0.180 |
+| PA, own threshold (0.249) | 2170 | 0.859 | 0.748 | 0.249 | 0.306 |
+| All, one threshold | 4003 | 0.871 | 0.721 | 0.476 | 0.412 |
+| All, view-specific thresholds | 4003 | 0.814 | 0.725 | 0.462 | 0.397 |
+
+Result: the errors are redistributed more evenly across views (PA misses fall from 35% to 14%, AP false alarms fall from 53% to 32%), but overall sensitivity drops from 0.871 to 0.814 with no gain in specificity. **Not adopted** in the deployed system: the single threshold keeps the higher overall sensitivity and is simpler. The result is documented as a tested mitigation and as evidence that retraining with view-aware sampling and external validation are the right next steps.
+
+## 7. Known failures and limits
 
 - One missed pneumonia and one false alarm among the six unseen X-rays (see above).
 - CT volume can be wrong while confidence is high (spleen_26).
