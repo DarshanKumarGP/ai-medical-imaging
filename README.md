@@ -12,6 +12,16 @@ A small end-to-end platform. Scans are stored in an **Orthanc DICOM server**, an
 
 ![Architecture](docs/architecture.png)
 
+## Screenshots
+
+| X-ray with Grad-CAM heatmap | CT spleen segmentation |
+|---|---|
+| ![X-ray](docs/screenshots/viewer_xray_heatmap.png) | ![CT](docs/screenshots/viewer_ct_segmentation.png) |
+
+| Reviewer audit history | Weak CT case (97% confidence, volume 27% too small) |
+|---|---|
+| ![Audit](docs/screenshots/viewer_audit_history.png) | ![Weak case](docs/screenshots/viewer_ct_weak_case.png) |
+
 ## Results at a glance
 
 | Model | Data | Result on held-out data |
