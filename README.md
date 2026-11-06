@@ -86,7 +86,7 @@ You can also drag any DICOM files into the Orthanc web page (Upload).
 ```
 src/            data prep, training helpers, Grad-CAM, inference service, FastAPI backend, CT helpers
 tests/          pytest suite (23 tests)
-notebooks/      Colab training notebooks (classification, segmentation)
+notebooks/      Colab notebooks (training, CT demo export, bias check)
 frontend/       React viewer (Vite)
 docker/         Dockerfiles and requirement generator
 models/         trained weights, tracked by DVC (*.dvc pointers in Git)
