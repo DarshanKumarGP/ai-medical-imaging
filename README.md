@@ -119,3 +119,6 @@ cd frontend && npm ci && npm run lint && npm run build
 - RSNA Pneumonia Detection Challenge (RSNA / Kaggle). Competition rules apply.
 - Medical Segmentation Decathlon, Task09 Spleen (CC-BY-SA 4.0).
 - Built with PyTorch, MONAI, pytorch-grad-cam, Orthanc, FastAPI, React, DVC and Docker.
+## Related project
+
+Project 2 of this internship (AIML-04, Autonomous Driving Perception Stack): https://github.com/DarshanKumarGP/autonomous-driving-perception
